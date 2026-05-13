@@ -1,0 +1,12 @@
+requests
+beautifulsoup4
+dnspython
+python-whois
+ipwhois
+openai
+
+# Optional – evidence_collector.py: full-page screenshots
+# playwright         (install: pip install playwright && playwright install chromium)
+
+# Optional – law_analyzer.py / origin_finder.py: Shodan favicon hash
+# mmh3

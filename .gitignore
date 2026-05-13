@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+
+# Origin Finder – generated output directories (contain investigation data)
+*_origin_*.json
+*_analysis_*/
+*_evidence_*/
+*_evidence_run/
+*_legal/
+*_reports_run/
+
+# Keep the two example JSON files that ship with the repo
+!dkoutlet24_com_origin_20260512_2231.json
+!dkoutlet24_com_origin_20260512_2243.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+*.swp
