@@ -2,19 +2,22 @@
 
 **Uncover the true identity and origin of any website** — even when it hides behind WHOIS privacy, Cloudflare, CDN proxies, or fake business details.
 
-Origin Finder is a Python reconnaissance toolkit that chains **16 investigation and action modules**, culminating in a GPT-4o AI verdict with two independently scored outputs: a **Site Legitimacy Score** (how trustworthy the site is) and a **Forensic Confidence** percentage (how certain the analyst is of the verdict).
+Origin Finder is a Python reconnaissance toolkit that chains **17 investigation and action modules**, culminating in a GPT-4o AI verdict with two independently scored outputs: a **Site Legitimacy Score** (how trustworthy the site is) and a **Forensic Confidence** percentage (how certain the analyst is of the verdict).
 
-When a site is identified as suspicious or fraudulent, three companion scripts automatically activate:
+The toolkit is **jurisdiction-agnostic** — it works against any website worldwide. Country-specific compliance modules (currently: Danish market) activate automatically when the relevant signals are detected in the target site.
+
+When a site is identified as suspicious or fraudulent, four companion scripts automatically activate:
 - **`law_analyzer.py`** — identifies every applicable law and generates a formal legal complaint
 - **`evidence_collector.py`** — downloads the entire website as forensic evidence
 - **`reporting_tool.py`** — produces ready-to-submit reports for police, consumer authorities, Cloudflare, and Google
+- **`payment_tracer.py`** — identifies the payment processor(s), extracts merchant identifiers, and generates PSP abuse reports and a law-enforcement brief for tracing the perpetrator through the payment channel
 
 ---
 
 ## Table of Contents
 
 - [Use Cases](#use-cases)
-- [How It Works — All 16 Sections](#how-it-works--all-16-sections)
+- [How It Works — All 17 Modules](#how-it-works--all-17-modules)
 - [Installation](#installation)
 - [Usage](#usage)
 - [Output](#output)
@@ -24,6 +27,7 @@ When a site is identified as suspicious or fraudulent, three companion scripts a
 - [Legal Framework Analysis (Section 14)](#legal-framework-analysis-section-14)
 - [Evidence Collection (Section 15)](#evidence-collection-section-15)
 - [Electronic Reporting (Section 16)](#electronic-reporting-section-16)
+- [Payment Processor Tracing (Section 17)](#payment-processor-tracing-section-17)
 - [Digital Fingerprinting — The "Black Site / White Site" Principle](#digital-fingerprinting--the-black-site--white-site-principle)
 - [Danish Legislation Reference](#danish-legislation-reference)
 - [Requirements](#requirements)
@@ -35,17 +39,19 @@ When a site is identified as suspicious or fraudulent, three companion scripts a
 
 | Scenario | What Origin Finder reveals |
 |---|---|
-| **Suspected fake shop** targeting Danish consumers | Missing CVR, no physical address, IP shared with 40 other grey-market sites |
+| **Suspected fake shop** targeting any consumer market | Missing business registration, no physical address, IP shared with dozens of grey-market sites |
+| **Fake shop** targeting Danish consumers specifically | Missing CVR, failing DK compliance score, verified against virk.dk / cvrapi.dk |
 | **Brand impersonation** site | Shared Google Analytics ID links it to the operator's 12 other clones |
 | **"Drop-shipping" fraud site** hidden behind Cloudflare | Pre-Cloudflare SSL cert in CT logs reveals the real origin server hostname |
-| **Unknown vendor** you want to verify before purchasing | Full DK Compliance Score, verified CVR data from virk.dk, legitimacy score |
+| **Unknown vendor** you want to verify before purchasing | Full compliance score, legitimacy score, AI verdict, live business registry check |
 | **OSINT / competitive intelligence** | Technology stack, hosting ASN, all subdomains ever issued a certificate |
-| **Building a police complaint** | 16-law violation report + pre-written NC3 complaint in Danish, ready to submit |
+| **Building a police complaint** | Violation report + pre-written complaints in relevant language, ready to submit |
 | **Preserving digital evidence** | Full site archive (HTML + JS + assets), SHA-256 chain of custody, screenshots |
+| **Tracing the perpetrator via payment channel** | Identifies PSP, extracts merchant ID / publishable keys, generates subpoena guidance |
 
 ---
 
-## How It Works — All 16 Sections
+## How It Works — All 17 Modules
 
 ### 1 · WHOIS Lookup
 Queries registrar, registrant name, organisation, country, creation/expiry dates, name servers, email, and DNSSEC status. Detects when WHOIS privacy is active (common on fraudulent sites).
@@ -117,6 +123,9 @@ See [dedicated section below](#evidence-collection-section-15).
 ### 16 · Electronic Reporting (`reporting_tool.py`)
 See [dedicated section below](#electronic-reporting-section-16).
 
+### 17 · Payment Processor Tracing (`payment_tracer.py`)
+See [dedicated section below](#payment-processor-tracing-section-17).
+
 ---
 
 ## Installation
@@ -171,23 +180,28 @@ Get one at: **GitHub → Settings → Developer settings → Personal access tok
 ### Full pipeline (recommended)
 
 ```bash
-# All 16 sections — OSINT + legal analysis + evidence + reports
-GITHUB_TOKEN=ghp_... python origin_finder.py dkoutlet24.com
+# All 17 modules — OSINT + legal analysis + evidence + reports + payment trace
+GITHUB_TOKEN=ghp_... python origin_finder.py suspicious-shop.com
 ```
 
-When the site scores below 60/100 legitimacy or the AI returns HIGH RISK / FRAUDULENT, sections 15 and 16 activate automatically.
+When the site scores below 60/100 legitimacy or the AI returns HIGH RISK / FRAUDULENT, sections 15, 16, and 17 activate automatically.
 
 ### Standalone scripts (run on any existing findings JSON)
 
 ```bash
 # Re-run legal analysis against a saved findings file
-python law_analyzer.py dkoutlet24_com_origin_20260512_2231.json
+python law_analyzer.py hostname_origin_YYYYMMDD_HHMM.json
 
 # Download the entire site as forensic evidence
-python evidence_collector.py https://dkoutlet24.com
+python evidence_collector.py https://suspicious-shop.com
 
 # Generate all authority reports
-python reporting_tool.py dkoutlet24_com_origin_20260512_2231.json
+python reporting_tool.py hostname_origin_YYYYMMDD_HHMM.json
+
+# Trace payment processors and generate PSP abuse reports
+python payment_tracer.py hostname_origin_YYYYMMDD_HHMM.json
+# or directly from a URL (no prior analysis required):
+python payment_tracer.py https://suspicious-shop.com
 ```
 
 ### Other options
@@ -196,8 +210,12 @@ python reporting_tool.py dkoutlet24_com_origin_20260512_2231.json
 # With HTTPS prefix (also accepted)
 python origin_finder.py https://example.com
 
-# Without AI analysis (token not set — all other sections still run)
+# Without AI analysis (token not set — all other modules still run)
 python origin_finder.py suspicious-shop.dk
+
+# Payment tracer standalone — accepts URL or findings JSON
+python payment_tracer.py https://suspicious-shop.com
+python payment_tracer.py hostname_origin_YYYYMMDD_HHMM.json
 ```
 
 The tool accepts bare domains, domains with paths, or full URLs. It normalises the input automatically.
@@ -206,7 +224,7 @@ The tool accepts bare domains, domains with paths, or full URLs. It normalises t
 
 ## Output
 
-All 16 sections print to **stdout** in real time with clear section headers.
+All 17 modules print to **stdout** in real time with clear section headers.
 
 After each run, a timestamped output directory is created:
 
@@ -216,12 +234,16 @@ hostname_analysis_YYYYMMDD_HHMM/
 ├── legal_complaint.txt          ← formal legal complaint (Section 14)
 ├── reports/
 │   ├── SUBMISSION_GUIDE.txt     ← step-by-step filing instructions
-│   ├── dk_nc3.txt               ← Danish police complaint (NC3)
-│   ├── dk_forbrugerombudsmanden.txt
+│   ├── dk_nc3.txt               ← Danish police complaint (NC3)  [if DK-targeted]
+│   ├── dk_forbrugerombudsmanden.txt                              [if DK-targeted]
 │   ├── cloudflare_abuse.txt     ← DSA Article 16 notice
 │   ├── registrar_abuse.txt
 │   ├── google_safebrowsing.txt
 │   └── icann_compliance.txt
+├── payment_trace/               ← Section 17 output
+│   ├── complaint_<psp>.txt      ← ready-to-send abuse complaint per PSP found
+│   ├── law_enforcement_payment_brief.txt  ← LE brief with subpoena / MLAT guidance
+│   └── payment_trace.json       ← machine-readable findings
 └── evidence/                    ← unmodified originals — do not edit
     ├── pages/                   ← all crawled HTML pages
     ├── assets/                  ← all JS, CSS, images
@@ -542,6 +564,70 @@ A master guide is generated with 5 prioritised steps:
 5. **Attorney** — full package handover for injunction / damages
 
 Each step includes the exact URL, email address, and which file to attach.
+
+---
+
+## Payment Processor Tracing (Section 17)
+
+`payment_tracer.py` identifies the payment gateway(s) used by a suspected fraudulent site and produces actionable intelligence for two parallel tracks: **PSP takedown** and **law-enforcement identity disclosure**.
+
+### Why the payment channel matters
+
+Every payment processor that onboards a merchant collects KYC (Know Your Customer) data — legal name, national ID or business registration, bank account, and contact details. This data is retained even after the merchant account is closed. It is therefore the **most reliable path to the real identity of an anonymous fraud site operator**, often succeeding where WHOIS privacy, CDN masking, and offshore hosting make other channels impractical.
+
+### Five tracing techniques
+
+| Technique | What it uncovers |
+|---|---|
+| **A · Static evidence scan** | Parses all downloaded HTML/JS/headers for payment script fingerprints, publishable keys (`pk_live_*`), merchant IDs, iframe `src`, `form action` URLs |
+| **B · Live checkout probe** | Makes live HTTP requests to `/checkout`, `/cart/checkout`, `/payment`, etc. and scans responses + CSP headers for PSP signatures |
+| **C · Platform identification** | Matches e-commerce platform fingerprints (Shoplazza, Shopify, WooCommerce, SHOPLINE, Ueeshop, Magento, etc.) which have known built-in PSP relationships |
+| **D · Merchant identifier extraction** | Extracts Stripe publishable keys, PayPal `client-id`, Klarna `client_id`, Adyen `merchantAccount`, Nets `checkoutKey`, platform `store_id` |
+| **E · Report generation** | Writes a ready-to-send complaint per discovered PSP + a consolidated law-enforcement brief |
+
+### Payment processors in the signature database
+
+| PSP | Key identifier extracted | Complaint destination |
+|---|---|---|
+| **Stripe** | `pk_live_*` publishable key → reveals connected account | fraud@stripe.com + stripe.com/government-requests |
+| **PayPal** | `client-id` → merchant PayPal account | reportfraud@paypal.com |
+| **Klarna** | `client_id` | merchant.feedback@klarna.com |
+| **Adyen** | `merchantAccount` name | security@adyen.com |
+| **Nets Easy** (DK) | `checkoutKey` | fraud@nets.eu |
+| **MobilePay** (DK) | merchant ID | support@mobilepay.dk |
+| **2Checkout / Verifone** | merchant code | abuse@2checkout.com |
+| **Worldpay** | merchant code | fraud.team@worldpay.com |
+| **Checkout.com** | public key | fraud@checkout.com |
+| **Payoneer** | partner ID | compliance@payoneer.com |
+| **Alipay** | app ID | intl-merchant-support@alibaba-inc.com |
+| **WeChat Pay** | app ID | wechatpay-support@tencent.com |
+| **Shoplazza / AllValue built-in** | `store_id` on platform | abuse@shoplazza.com |
+
+### Law-enforcement brief
+
+`law_enforcement_payment_brief.txt` is a structured document that gives investigators:
+
+1. **All discovered PSP accounts** with the exact identifier (key / merchant ID) that identifies the account
+2. **Per-PSP subpoena guidance** — applicable law (ECPA, EU DPF, MLAT treaty), exact legal basis, recommended wording for a court order or police request
+3. **Card-scheme escalation contacts** — Visa VAMP, Mastercard MMP (flagging the MID terminates card acceptance across all processors, not just one)
+4. **Platform KYC route** — for Chinese SaaS platforms (Shoplazza, SHOPLINE, Ueeshop) where the Chinese operator has national-ID-level KYC on merchants, with guidance on China MLAT / Mutual Legal Assistance procedure
+5. **Full OSINT context** injected from the main `origin_finder.py` findings (WHOIS registrar, DNS, SSL, IP ASN, etc.)
+
+### Standalone usage
+
+```bash
+# From a URL (performs live checkout probe)
+python payment_tracer.py https://suspicious-shop.com
+
+# From a prior analysis JSON (also scans downloaded evidence directory)
+python payment_tracer.py hostname_origin_YYYYMMDD_HHMM.json
+```
+
+Output is written to `hostname_analysis_YYYYMMDD_HHMM/payment_trace/` (when called via `origin_finder.py`) or to `payment_trace/` in the current directory (standalone).
+
+### Automatic trigger condition
+
+When called from `origin_finder.py`, Section 17 activates automatically whenever the site is flagged as suspicious or fraudulent (same threshold as Sections 15–16). It can always be re-run standalone against any existing findings JSON.
 
 ---
 

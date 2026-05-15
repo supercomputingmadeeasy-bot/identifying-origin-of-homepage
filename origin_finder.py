@@ -47,6 +47,7 @@ import socket
 import textwrap
 import ipaddress
 from datetime import datetime, timezone
+from pathlib import Path
 from urllib.parse import urlparse, urljoin
 
 # ── third-party (install with: pip install requests beautifulsoup4 dnspython python-whois ipwhois openai)
@@ -1221,6 +1222,25 @@ def main():
     except ImportError:
         print("  [!] reporting_tool.py not found – skipping report generation.")
 
+    # ── 17. Payment processor tracing ────────────────────────────────────────
+    try:
+        from payment_tracer import run_payment_trace
+        ev_dir = Path(out_dir) / "evidence" if is_suspicious else None
+        payment_out = Path(out_dir) / "payment_trace"
+        all_findings["payment_trace"] = run_payment_trace(
+            hostname          = hostname,
+            existing_findings = all_findings,
+            out_dir           = payment_out,
+            evidence_dir      = ev_dir,
+            do_live_probe     = True,
+        )
+        with open(out_file, "w") as f:
+            json.dump(all_findings, f, indent=2, default=str)
+    except ImportError:
+        print("  [!] payment_tracer.py not found – skipping payment trace.")
+    except Exception as exc:
+        print(f"  [!] Payment trace error: {exc}")
+
     print(f"\n{'═'*60}")
     print(f"  All outputs saved under : {out_dir}/")
     print(f"  Full JSON               : {out_file}")
@@ -1228,6 +1248,7 @@ def main():
         print(f"  Evidence archive        : {out_dir}/evidence/")
     print(f"  Legal complaint         : {out_dir}/legal_complaint.txt")
     print(f"  Authority reports       : {out_dir}/reports/SUBMISSION_GUIDE.txt")
+    print(f"  Payment trace reports   : {out_dir}/payment_trace/")
     print(f"{'═'*60}\n")
 
 
