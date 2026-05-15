@@ -477,6 +477,254 @@ class EvidenceCollector:
         print(f"  [ARCHIVE] Done – {size_mb:.1f} MB  ({len(self.manifest)} files archived)")
         return zip_path
 
+    def write_browse_html(self, findings: dict) -> Path:
+        """
+        Write _BROWSE.html to the parent analysis directory (never inside evidence/).
+        Generates a two-panel iframe viewer: page navigator sidebar + evidence pointers.
+        """
+        return generate_browse_html(self.out_dir.parent, findings)
+
+
+# ── Standalone browser generator (works on existing analysis dirs) ────────────
+
+def generate_browse_html(analysis_dir, findings: dict = None) -> Path:
+    """
+    Generate _BROWSE.html from an existing analysis directory.
+
+    analysis_dir must contain:
+        evidence/manifest.json       (page list)
+        evidence/evidence_manifest.txt
+        legal_complaint.txt
+        reports/
+
+    Also callable standalone:
+        python evidence_collector.py --browse <analysis_dir>
+    """
+    analysis_dir = Path(analysis_dir)
+    evidence_dir = analysis_dir / "evidence"
+    manifest_file = evidence_dir / "manifest.json"
+
+    if not manifest_file.exists():
+        print(f"  [BROWSE] No manifest.json found in {evidence_dir} – skipping")
+        return None
+
+    with open(manifest_file, encoding="utf-8") as f:
+        data = json.load(f)
+    manifest_entries = data.get("manifest", data) if isinstance(data, dict) else data
+
+    # Derive hostname from first page URL
+    pages = [e for e in manifest_entries if e.get("type") == "page/html"]
+    hostname = ""
+    if pages:
+        hostname = urlparse(pages[0].get("url", "")).hostname or ""
+
+    # Derive AI score: prefer findings dict, fall back to legal_complaint.txt
+    ai_text = ""
+    if findings:
+        ai_text = findings.get("ai_analysis", "")
+    if not ai_text:
+        lc_path = analysis_dir / "legal_complaint.txt"
+        if lc_path.exists():
+            ai_text = lc_path.read_text(encoding="utf-8", errors="replace")[:4000]
+
+    m = re.search(r"SITE LEGITIMACY SCORE:\s*(\d+)/100[^\n]*", ai_text)
+    legitimacy = m.group(0).strip() if m else ""
+    score_val  = int(re.search(r"(\d+)/100", legitimacy).group(1)) if m else -1
+
+    if score_val < 0:
+        score_colour = "#888"
+    elif score_val < 30:
+        score_colour = "#e74c3c"
+    elif score_val < 60:
+        score_colour = "#e67e22"
+    else:
+        score_colour = "#27ae60"
+
+    # Build page list HTML
+    page_items = []
+    for entry in pages:
+        sp    = entry["saved_as"].replace("\\", "/")   # e.g. "pages/index.html"
+        ev_rel = "evidence/" + sp
+        url   = entry.get("url", "")
+        label = sp.replace("pages/", "").replace(".html", "") or "index"
+        if label == "index":
+            label = "/ (homepage)"
+        page_items.append(
+            f'<li><a href="{ev_rel}" target="viewer" title="{url}">{label}</a></li>'
+        )
+    pages_html = "\n        ".join(page_items)
+
+    first_page = f"evidence/{pages[0]['saved_as'].replace(chr(92), '/')}" if pages else ""
+
+    # Report links (only include files that exist)
+    reports_dir = analysis_dir / "reports"
+    def _rlink(fname, label, cls="rlink"):
+        p = reports_dir / fname
+        return (f'<a href="reports/{fname}" target="_blank" class="{cls}">{label}</a>'
+                if p.exists() else "")
+
+    report_links_html = " ".join(filter(None, [
+        _rlink("dk_nc3.txt",                  "NC3 Complaint",         "rlink highlight"),
+        _rlink("dk_forbrugerombudsmanden.txt", "Forbrugerombudsmanden", "rlink highlight"),
+        _rlink("cloudflare_abuse.txt",         "Cloudflare Abuse"),
+        _rlink("registrar_abuse.txt",          "Registrar Abuse"),
+        _rlink("google_safebrowsing.txt",      "Google SafeBrowsing"),
+        _rlink("icann_compliance.txt",         "ICANN"),
+        _rlink("SUBMISSION_GUIDE.txt",         "Submission Guide"),
+    ]))
+
+    lc_link = ('<a href="legal_complaint.txt" target="_blank" class="rlink highlight">⚖ Legal Complaint</a>'
+               if (analysis_dir / "legal_complaint.txt").exists() else "")
+
+    score_badge = (f'<span class="badge">{legitimacy}</span>' if legitimacy else "")
+
+    browse_path = analysis_dir / "_BROWSE.html"
+    html = f"""\
+<!DOCTYPE html>
+<html lang="da">
+<head>
+  <meta charset="utf-8">
+  <title>Fraud Investigation Browser – {hostname}</title>
+  <style>
+    *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
+    body {{ font-family: system-ui, -apple-system, sans-serif; font-size: 13px;
+            background: #1a1a2e; color: #eee; height: 100vh;
+            display: flex; flex-direction: column; overflow: hidden; }}
+
+    /* ── Header ── */
+    #hdr {{ background: #16213e; border-bottom: 3px solid #e74c3c;
+            padding: 8px 14px; flex-shrink: 0; }}
+    #hdr .r1 {{ display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+                margin-bottom: 5px; }}
+    #hdr .domain {{ font-size: 16px; font-weight: 700; color: #f39c12; }}
+    .badge {{ background: {score_colour}; color: #fff; font-weight: 700;
+              padding: 2px 9px; border-radius: 3px; font-size: 12px; white-space: nowrap; }}
+    #hdr .notice {{ font-size: 11px; color: #888; margin-left: auto; font-style: italic; }}
+    #hdr .r2 {{ display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }}
+    #hdr .lbl {{ font-size: 11px; font-weight: 700; color: #aaa; padding: 0 4px; }}
+    a.rlink, a.elink {{
+      display: inline-block; padding: 3px 9px; border-radius: 3px;
+      font-size: 11px; font-weight: 600; text-decoration: none; white-space: nowrap;
+    }}
+    a.rlink              {{ background: #2c3e50; color: #ecf0f1; border: 1px solid #455a6e; }}
+    a.rlink:hover        {{ background: #3d5166; }}
+    a.rlink.highlight    {{ background: #c0392b; color: #fff; border-color: #e74c3c; }}
+    a.rlink.highlight:hover {{ background: #e74c3c; }}
+    a.elink              {{ background: #1a3a1a; color: #82c982; border: 1px solid #2d5a2d; }}
+    a.elink:hover        {{ background: #234523; }}
+
+    /* ── Body layout ── */
+    #body {{ display: flex; flex: 1; overflow: hidden; }}
+
+    /* ── Sidebar ── */
+    #sidebar {{ width: 250px; min-width: 170px; background: #0f3460;
+                border-right: 1px solid #1a4a7a; overflow-y: auto;
+                flex-shrink: 0; resize: horizontal; }}
+    .sec-hdr {{ position: sticky; top: 0; padding: 7px 10px;
+                font-size: 10px; font-weight: 700; text-transform: uppercase;
+                letter-spacing: .07em; border-bottom: 1px solid #1a4a7a;
+                background: #0a2744; color: #7fb3d3; }}
+    .sec-hdr.green {{ background: #0a250a; color: #82c982; border-bottom-color: #2d5a2d; }}
+    .sec-hdr.law   {{ background: #1a1a0a; color: #d4c97a; border-bottom-color: #4a4a1a; }}
+    #sidebar ul {{ list-style: none; padding: 3px 0; }}
+    #sidebar li a {{
+      display: block; padding: 5px 12px; color: #aad4f0; text-decoration: none;
+      font-size: 12px; border-bottom: 1px solid rgba(255,255,255,.04);
+      word-break: break-word;
+    }}
+    #sidebar li a:hover  {{ background: #1a4a7a; color: #fff; }}
+    #sidebar li a.active {{ background: #1a5276; color: #fff; font-weight: 600; }}
+    .ev-sec li a  {{ color: #82c982; }}
+    .ev-sec li a:hover {{ background: #1a3a0a; }}
+    .law-sec li a {{ color: #d4c97a; }}
+    .law-sec li a:hover {{ background: #2a2a0a; }}
+
+    /* ── Viewer ── */
+    #viewer {{ flex: 1; overflow: hidden; }}
+    #viewer iframe {{ width: 100%; height: 100%; border: none; }}
+    .placeholder {{ display: flex; align-items: center; justify-content: center;
+                    height: 100%; color: #555; font-size: 15px; }}
+  </style>
+</head>
+<body>
+
+<div id="hdr">
+  <div class="r1">
+    <span class="domain">{hostname}</span>
+    {score_badge}
+    <span class="notice">Navigable captured snapshot — evidence files are unmodified originals</span>
+  </div>
+  <div class="r2">
+    <span class="lbl">LEGAL:</span>
+    {lc_link}
+    {report_links_html}
+    <span class="lbl" style="margin-left:6px">EVIDENCE:</span>
+    <a href="evidence/evidence_manifest.txt" target="_blank" class="elink">Chain-of-Custody</a>
+    <a href="evidence/manifest.json" target="_blank" class="elink">manifest.json</a>
+    <a href="evidence/pages/" target="_blank" class="elink">pages/</a>
+    <a href="evidence/assets/" target="_blank" class="elink">assets/</a>
+    <a href="evidence/headers/" target="_blank" class="elink">headers/</a>
+  </div>
+</div>
+
+<div id="body">
+  <nav id="sidebar">
+
+    <div class="sec-hdr">Captured pages ({len(pages)})</div>
+    <ul id="page-list">
+      {pages_html}
+    </ul>
+
+    <div class="sec-hdr green ev-sec" style="margin-top:4px">Evidence &amp; reports</div>
+    <ul class="ev-sec">
+      <li><a href="legal_complaint.txt" target="_blank">⚖ legal_complaint.txt</a></li>
+      <li><a href="evidence/evidence_manifest.txt" target="_blank">🔒 evidence_manifest.txt</a></li>
+      <li><a href="evidence/manifest.json" target="_blank">📋 manifest.json</a></li>
+      <li><a href="reports/SUBMISSION_GUIDE.txt" target="_blank">📬 SUBMISSION_GUIDE.txt</a></li>
+      <li><a href="reports/dk_nc3.txt" target="_blank">🚔 dk_nc3.txt</a></li>
+      <li><a href="reports/dk_forbrugerombudsmanden.txt" target="_blank">🏛 dk_forbrugerombudsmanden.txt</a></li>
+      <li><a href="reports/cloudflare_abuse.txt" target="_blank">☁ cloudflare_abuse.txt</a></li>
+      <li><a href="reports/registrar_abuse.txt" target="_blank">📝 registrar_abuse.txt</a></li>
+      <li><a href="reports/google_safebrowsing.txt" target="_blank">🔍 google_safebrowsing.txt</a></li>
+      <li><a href="reports/icann_compliance.txt" target="_blank">🌐 icann_compliance.txt</a></li>
+    </ul>
+
+    <div class="sec-hdr law law-sec" style="margin-top:4px">Dansk lovgivning</div>
+    <ul class="law-sec">
+      <li><a href="https://www.retsinformation.dk/eli/lta/2019/1295" target="_blank">E-handelsloven (LBK 1295/2019)</a></li>
+      <li><a href="https://www.retsinformation.dk/eli/lta/2017/426" target="_blank">Markedsføringsloven (L 426/2017)</a></li>
+      <li><a href="https://www.retsinformation.dk/eli/lta/2022/2052" target="_blank">Forbrugeraftaleloven (LBK 2052/2022)</a></li>
+      <li><a href="https://www.retsinformation.dk/eli/lta/2018/1182" target="_blank">GDPR-loven / Databeskyttelsesloven</a></li>
+      <li><a href="https://www.retsinformation.dk/" target="_blank">↗ retsinformation.dk</a></li>
+    </ul>
+
+  </nav>
+
+  <main id="viewer">
+    {"<iframe name='viewer' id='frame' src='" + first_page + "'></iframe>"
+     if first_page else "<div class='placeholder'>No captured pages found in manifest</div>"}
+  </main>
+</div>
+
+<script>
+  var links = document.querySelectorAll('#page-list a');
+  links.forEach(function(a) {{
+    a.addEventListener('click', function() {{
+      links.forEach(function(x) {{ x.classList.remove('active'); }});
+      this.classList.add('active');
+    }});
+  }});
+  var first = document.querySelector('#page-list a');
+  if (first) first.classList.add('active');
+</script>
+
+</body>
+</html>
+"""
+    browse_path.write_text(html, encoding="utf-8")
+    print(f"  ✓ Browse viewer     : {browse_path}")
+    return browse_path
+
 
 # ── Public entry point ────────────────────────────────────────────────────────
 
@@ -513,11 +761,13 @@ def collect_evidence(url: str, hostname: str,
     # Screenshots (optional dependency)
     collector.take_screenshots()
 
-    # Write manifest and create archive
+    # Write manifest, browse viewer, and archive
     manifest_path = collector.write_manifest(findings)
+    browse_path   = collector.write_browse_html(findings)
     archive_path  = collector.create_archive()
 
     print(f"\n  ✓ Evidence manifest : {manifest_path}")
+    print(f"  ✓ Browse viewer     : {browse_path}")
     print(f"  ✓ Evidence archive  : {archive_path}")
     print(f"  ✓ Pages collected   : {len(collector.visited_pages)}")
     print(f"  ✓ Assets collected  : {len(collector.visited_assets)}")
@@ -538,8 +788,20 @@ def collect_evidence(url: str, hostname: str,
 def main():
     if len(sys.argv) < 2:
         print("Usage: python evidence_collector.py <url> [output_dir]")
+        print("       python evidence_collector.py --browse <analysis_dir>")
         print("       Example: python evidence_collector.py https://dkoutlet24.com")
         sys.exit(1)
+
+    # ── Browse-only mode: regenerate _BROWSE.html from existing analysis dir ──
+    if sys.argv[1] == "--browse":
+        if len(sys.argv) < 3:
+            print("Usage: python evidence_collector.py --browse <analysis_dir>")
+            sys.exit(1)
+        p = generate_browse_html(sys.argv[2])
+        if p:
+            print(f"\n  Browse viewer written: {p}")
+            print(f"  Open in browser:  xdg-open \"{p}\"")
+        sys.exit(0)
 
     raw_url = sys.argv[1].strip()
     if not raw_url.startswith(("http://", "https://")):

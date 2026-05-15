@@ -18,12 +18,14 @@ When a site is identified as suspicious or fraudulent, three companion scripts a
 - [Installation](#installation)
 - [Usage](#usage)
 - [Output](#output)
+- [Browse Viewer — Navigating Captured Evidence](#browse-viewer--navigating-captured-evidence)
 - [Danish Market Compliance (Section 12)](#danish-market-compliance-section-12)
 - [AI Verdict Scoring (Section 13)](#ai-verdict-scoring-section-13)
 - [Legal Framework Analysis (Section 14)](#legal-framework-analysis-section-14)
 - [Evidence Collection (Section 15)](#evidence-collection-section-15)
 - [Electronic Reporting (Section 16)](#electronic-reporting-section-16)
 - [Digital Fingerprinting — The "Black Site / White Site" Principle](#digital-fingerprinting--the-black-site--white-site-principle)
+- [Danish Legislation Reference](#danish-legislation-reference)
 - [Requirements](#requirements)
 - [Legal & Ethical Use](#legal--ethical-use)
 
@@ -210,6 +212,7 @@ After each run, a timestamped output directory is created:
 
 ```
 hostname_analysis_YYYYMMDD_HHMM/
+├── _BROWSE.html                 ← ★ navigable site viewer (open in browser)
 ├── legal_complaint.txt          ← formal legal complaint (Section 14)
 ├── reports/
 │   ├── SUBMISSION_GUIDE.txt     ← step-by-step filing instructions
@@ -219,14 +222,17 @@ hostname_analysis_YYYYMMDD_HHMM/
 │   ├── registrar_abuse.txt
 │   ├── google_safebrowsing.txt
 │   └── icann_compliance.txt
-└── evidence/                    ← (if site scored < 60/100)
+└── evidence/                    ← unmodified originals — do not edit
     ├── pages/                   ← all crawled HTML pages
     ├── assets/                  ← all JS, CSS, images
     ├── headers/                 ← HTTP response headers per file
     ├── screenshots/             ← full-page PNGs (if Playwright installed)
     ├── evidence_manifest.txt    ← chain of custody document
-    └── manifest.json
+    └── manifest.json            ← machine-readable manifest (SHA-256 hashes)
 ```
+
+> **Evidence integrity:** everything inside `evidence/` is written once and never modified.
+> `_BROWSE.html` is a read-only viewer generated *outside* `evidence/` so it cannot contaminate the forensic record.
 
 The raw JSON file is written alongside the directory:
 ```
@@ -276,6 +282,46 @@ All evidence files are SHA-256 hashed. The manifest and ZIP archive are suitable
   SITE LEGITIMACY SCORE: 22/100 – HIGH RISK
   Forensic Confidence: 88%
 ```
+
+---
+
+## Browse Viewer — Navigating Captured Evidence
+
+Every analysis directory contains `_BROWSE.html` — a self-contained, offline HTML file that lets you navigate the captured site snapshot as if you were browsing it live.
+
+### What it provides
+
+| Panel | Contents |
+|---|---|
+| **Top header** | Domain, AI legitimacy score (colour-coded), quick links to all reports and evidence |
+| **Left sidebar — Captured pages** | Clickable list of every HTML page collected; click to display in the main viewer |
+| **Left sidebar — Evidence & reports** | Direct links to `legal_complaint.txt`, chain-of-custody manifest, `manifest.json`, and all authority reports |
+| **Left sidebar — Dansk lovgivning** | Direct links to the applicable Danish laws on [retsinformation.dk](https://www.retsinformation.dk/) |
+| **Main frame** | Inline iframe showing the selected captured page |
+
+### Opening the viewer
+
+```bash
+# Linux / macOS
+xdg-open  "hostname_analysis_YYYYMMDD_HHMM/_BROWSE.html"
+open      "hostname_analysis_YYYYMMDD_HHMM/_BROWSE.html"
+
+# Or simply double-click _BROWSE.html in your file manager
+```
+
+### Regenerating for an existing analysis directory
+
+If you have an older analysis directory without a `_BROWSE.html`, regenerate it without touching the evidence:
+
+```bash
+python evidence_collector.py --browse hostname_analysis_YYYYMMDD_HHMM
+```
+
+This reads `evidence/manifest.json` (read-only) and writes only `_BROWSE.html` to the analysis directory.
+
+### Evidence integrity guarantee
+
+`_BROWSE.html` is written to the **analysis directory root** — never inside `evidence/`. The files under `evidence/` (pages, assets, headers, manifests) are never modified after collection. SHA-256 hashes in `manifest.json` can be independently verified at any time to confirm the evidence archive is unaltered.
 
 ---
 
@@ -531,6 +577,23 @@ Visible page text (scripts and styles stripped) is hashed with SHA-256 and MD5. 
 ### 11e — Inline JavaScript Hashes
 
 Each inline `<script>` block (no `src` attribute, > 80 chars) is MD5-hashed. Developers copy-paste the same boilerplate across every site they build. These hashes can be searched in Shodan and Censys to find the full deployment footprint.
+
+---
+
+## Danish Legislation Reference
+
+Full text of every applicable law is available free of charge on **[retsinformation.dk](https://www.retsinformation.dk/)** — the official Danish legal information system.
+
+| Law | retsinformation.dk link | Topic |
+|---|---|---|
+| E-handelsloven | [LBK nr. 1295 af 13/11/2019](https://www.retsinformation.dk/eli/lta/2019/1295) | Mandatory online business identification (§ 13) |
+| Markedsføringsloven | [Lov nr. 426 af 03/05/2017](https://www.retsinformation.dk/eli/lta/2017/426) | Prohibition against misleading commercial practices |
+| Forbrugeraftaleloven | [LBK nr. 2052 af 24/11/2022](https://www.retsinformation.dk/eli/lta/2022/2052) | Distance-selling consumer rights |
+| Straffeloven | [LBK nr. 1360 af 13/10/2023](https://www.retsinformation.dk/eli/lta/2023/1360) | §§ 279–279a: fraud and computer fraud |
+| Databeskyttelsesloven | [LOV nr. 502 af 23/05/2018](https://www.retsinformation.dk/eli/lta/2018/1182) | GDPR implementation — data subject rights |
+| Retsplejeloven | [LBK nr. 1160 af 19/09/2023](https://www.retsinformation.dk/eli/lta/2023/1160) | §§ 804–806: police orders compelling data disclosure |
+
+Links are also available directly in the sidebar of every generated `_BROWSE.html` viewer.
 
 ---
 
